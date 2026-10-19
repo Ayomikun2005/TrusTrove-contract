@@ -687,6 +687,16 @@ impl RegistryContract {
     /// `address_reinstated` event so integrators can distinguish
     /// reinstatement from a generic verification toggle.
     ///
+    /// Like `revoke`, it is guarded by an idempotency check (#606): it only
+    /// operates on profiles whose `revoked` flag is set. Calling it on a
+    /// profile that was never revoked — a `Pending` profile or one that is
+    /// already `Verified` — is a no-op that returns `true` without writing
+    /// storage or emitting `address_reinstated`. This keeps `reinstate` from
+    /// being used as an undocumented alternate path to verify a `Pending`
+    /// profile (use `verify_profile` for that), and keeps the
+    /// `address_reinstated` event honest for off-chain indexers: it is only
+    /// ever emitted for an actual un-revocation.
+    ///
     /// # Arguments
     /// * `env` - The Soroban environment.
     /// * `address` - The registered address whose verification should be
@@ -702,7 +712,9 @@ impl RegistryContract {
     /// * `RegistryError::NotFound` if no profile is stored for `address`.
     ///
     /// # Returns
-    /// * `bool` - `true` when the profile is successfully reinstated.
+    /// * `bool` - `true` when the profile is verified or the call required no
+    ///   action: a successful reinstatement, an already-verified profile, or
+    ///   a never-revoked (`Pending`) profile left untouched.
     ///
     /// # Example
     /// ```ignore
@@ -718,6 +730,9 @@ impl RegistryContract {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, RegistryError::NotFound));
+        if !profile.revoked() {
+            return true;
+        }
         profile.set_verified(true);
         profile.set_revoked(false);
         env.storage().persistent().set(&key, &profile);

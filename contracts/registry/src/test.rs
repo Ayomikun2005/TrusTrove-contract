@@ -361,6 +361,50 @@ fn test_reinstate_unregistered_panics() {
 }
 
 #[test]
+fn test_reinstate_on_pending_profile_does_not_verify() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let issuer = Address::generate(&env);
+    client.register_issuer(&issuer, &map![&env]);
+
+    // The profile is Pending: never verified, never revoked. `reinstate` is
+    // the inverse of `revoke` and must not act as an undocumented alternate
+    // path to verify a Pending profile (#606).
+    let events_before = env.events().all().len();
+    let result = client.reinstate(&issuer);
+    assert!(result);
+    assert!(!client.is_verified(&issuer));
+    assert_eq!(
+        client.get_verification_status(&issuer),
+        VerificationStatus::Pending
+    );
+    // No `address_reinstated` event and no other emission: the call is a no-op.
+    assert_eq!(env.events().all().len(), events_before);
+}
+
+#[test]
+fn test_reinstate_on_verified_profile_is_idempotent_noop() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let issuer = Address::generate(&env);
+    client.register_issuer(&issuer, &map![&env]);
+    client.verify_profile(&admin, &issuer, &true);
+
+    // Already Verified (never revoked): reinstate must not rewrite storage or
+    // re-emit `address_reinstated`, mirroring `revoke`'s idempotency guard (#606).
+    let events_before = env.events().all().len();
+    assert!(client.reinstate(&issuer));
+    assert!(client.is_verified(&issuer));
+    assert_eq!(
+        client.get_verification_status(&issuer),
+        VerificationStatus::Verified
+    );
+    assert_eq!(env.events().all().len(), events_before);
+}
+
+#[test]
 fn test_update_metadata_self_succeeds() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
