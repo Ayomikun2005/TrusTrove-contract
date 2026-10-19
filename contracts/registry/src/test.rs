@@ -1205,6 +1205,42 @@ fn test_get_verification_status_distinguishes_pending_from_unregistered() {
     );
 }
 
+// ============== GET_ROLE VIEW TESTS (#609) ==============
+
+#[test]
+fn test_get_role_returns_issuer_role() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let issuer = Address::generate(&env);
+    client.register_issuer(&issuer, &map![&env]);
+    // Decoded on-chain: no need to reverse-engineer packed_flags (#609).
+    assert_eq!(client.get_role(&issuer), Some(Role::Issuer));
+}
+
+#[test]
+fn test_get_role_returns_buyer_and_survives_verification_changes() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let buyer = Address::generate(&env);
+    client.register_buyer(&buyer, &map![&env]);
+    client.verify_profile(&admin, &buyer, &true);
+    assert_eq!(client.get_role(&buyer), Some(Role::Buyer));
+    client.revoke(&buyer);
+    // The role is stable across verification state changes.
+    assert_eq!(client.get_role(&buyer), Some(Role::Buyer));
+}
+
+#[test]
+fn test_get_role_unregistered_returns_none() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let unknown = Address::generate(&env);
+    assert_eq!(client.get_role(&unknown), None);
+}
+
 #[test]
 fn test_get_verification_status_revoked_distinct_from_pending() {
     let (env, client) = setup();
